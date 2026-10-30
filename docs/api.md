@@ -7,19 +7,70 @@
 | GET | `/api/health` | `{ ok: true }` |
 | GET | `/api/report` | 화면에 필요한 전체 상태 (아래 형식) |
 | GET | `/api/events` | SSE. 상태가 바뀔 때마다 `event: report`로 전체 report 전송 |
-| POST | `/api/run` | 1세대 실행. 끝나면 report 반환. 실행 중이면 409 |
-| POST | `/api/reset` | 초기화 (배포 룰도 비움) |
+| POST | `/api/run` | **여러 세대 자동 실행 (기본 3세대)**. 끝나면 report 반환. `wait:false`면 바로 202. 실행 중이면 409 |
+| POST | `/api/reset` | 초기화 (배포 룰도 비움). body `{ "seed": 20261031 }` 선택 |
+| POST | `/api/demo` | **데모 버튼용**: 시드 고정 초기화 + 자동 실행을 한 번에. 바로 202, 진행은 SSE로 |
 | POST | `/api/test` | 요청 하나 검사. body `{ "request": "/search?q=..." }` |
 | GET | `/api/samples?kind=normal\|attack\|mutated` | 테스트용 샘플 요청 `{ request }` |
 
 오류는 `{ "error": "메시지" }` 와 상태 코드로 응답합니다.
 
+## 변경 이력 (프론트 공유용)
+**2026-10-31 B4 오케스트레이터** — 기존 필드는 그대로, 아래만 추가/변경
+- `POST /api/run`이 1세대 → **기본 3세대 연속 실행**으로 바뀜. 1세대만 원하면 `{ "generations": 1 }`
+- `POST /api/demo` 추가: 발표 때 이 버튼 하나만 누르면 됨
+- report에 `run`(자동 실행 진행 상황), `seed` 필드 추가
+- `POST /api/reset`이 `{ seed }`를 받음
+
 ## POST /api/run body (모두 선택)
 ```json
-{ "fpMax": 0, "bypMax": 10, "intensity": 2, "stageDelayMs": 600 }
+{ "generations": 3, "fpMax": 0, "bypMax": 10, "intensity": 2,
+  "stageDelayMs": 600, "generationDelayMs": 1200, "stopWhenConverged": true, "wait": true }
 ```
+- `generations` 연속 실행할 세대 수 1~5 (기본 3)
 - `fpMax` 오탐 허용치(%, 0~10), `bypMax` 우회 허용치(%, 0~60)
-- `intensity` AI 공격 강도 1~3, `stageDelayMs` 단계별 대기(화면 연출용)
+- `intensity` AI 공격 강도 1~3, `stageDelayMs` 단계별 대기(화면 연출용, 기본 400)
+- `generationDelayMs` 세대 사이 대기 (기본 stageDelayMs × 2)
+- `stopWhenConverged` 수렴(모든 유형 배포 + 실전 우회 0)하면 남은 세대 건너뜀 (기본 true)
+- `wait` false면 끝날 때까지 기다리지 않고 바로 `202 { "started": true }` (진행은 SSE로)
+
+기본값(`stageDelayMs` 400)이면 1세대에 약 2.8초, 3세대에 약 10초 걸립니다. 화면 연출이 빠르면 `stageDelayMs`를 600~1000으로 올리세요.
+
+## POST /api/demo body (모두 선택)
+```json
+{ "seed": 20261031, "generations": 3, "stageDelayMs": 800 }
+```
+`/api/reset {seed}` 후 `/api/run`을 `wait:false`로 부른 것과 같습니다. 응답 `202 { "started": true, "seed": 20261031 }`.
+
+## 프론트 연동 예시
+```js
+// 1) 화면 진입 시 SSE 연결 — 이후 모든 갱신은 여기로 들어옴 (단계·세대가 바뀔 때마다 report 전체)
+const es = new EventSource('/api/events');
+es.addEventListener('report', (e) => setReport(JSON.parse(e.data)));
+
+// 2) 버튼: 응답을 기다릴 필요 없음, 화면은 SSE가 갱신
+await fetch('/api/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ stageDelayMs: 800 }) });
+
+// 3) 진행 표시
+// report.busy                → 버튼 비활성화
+// report.run.current/total   → "2 / 3 세대"
+// report.activeStage (0~4)   → 5단계 중 현재 단계 강조, null이면 단계 사이
+// report.history             → 세대별 탐지율/우회율/오탐률 그래프
+```
+
+## 시드 고정 데모 시나리오
+같은 시드 + OpenAI 키 없음(패턴 풀) + 같은 옵션이면 결과가 항상 같습니다. `cd platform-api && npm run demo`로 서버 없이 미리 볼 수 있어요.
+기본 시드 `20261031`, 3세대, 강도 2 결과 (로컬 룰 검사 기준, 실제 WAF 결과 아님):
+
+| 세대 | 탐지율 | 우회율 | 오탐률 | 일어나는 일 |
+|---|---|---|---|---|
+| 0 | 0% | 100% | 0% | 배포 룰 없음 |
+| 1 | 0% | 100% | 0% | 후보 16개 전부 탈락 (오탐·탐지 부족·우회). 예) `=\s*\d`가 정상 `/news?id=1024` 차단 |
+| 2 | 73.3% | 26.7% | 0% | 1세대에 당한 우회 기법(인코딩·대소문자 등) 학습 → XSS·Path·CMDi 룰 배포 |
+| 3 | 100% | 0% | 0% | SQLi 룰 배포 → 4유형 모두 배포, 실전 우회 0건으로 수렴 |
+
+OpenAI 키를 넣으면 LLM 응답이 매번 달라서 이 표와 다르게 나옵니다. 발표 리허설은 키 없이 하세요.
 
 ## POST /api/test 응답
 ```json
@@ -39,6 +90,9 @@
   "busy": false,
   "activeStage": null,
   "stages": ["공격 27건 ...", "후보 16개 생성", "...", "...", "..."],
+  "run": { "total": 3, "current": 2, "startGen": 1, "endGen": 3, "stoppedEarly": false,
+           "startedAt": 1730000000000, "finishedAt": null },
+  "seed": 20261031,
   "converged": false,
   "kpis": { "deployed": 3, "totalTypes": 4, "detect": 0.73, "bypass": 0.27, "fp": 0, "techniques": 4, "corpus": 30 },
   "candidates": [ { "id": "R017", "type": "sqli", "pattern": "...", "tier": "good",
@@ -52,6 +106,8 @@
   "env": { "wafConnected": false, "aiEnabled": false }
 }
 ```
+- `run`: 마지막 `/api/run` 진행 상황. 한 번도 안 돌렸으면 `null`. `finishedAt`이 null이면 실행 중
+- `seed`: 마지막 초기화 때 쓴 시드
 - `type`: `sqli | xss | path | cmd`
 - `status`: `pending | ok | deploy | fp | det | byp` (검증 중, 생존, 배포, 오탐 탈락, 탐지 부족 탈락, 우회 탈락)
 - `tier`: `literal | good | broad | ai`

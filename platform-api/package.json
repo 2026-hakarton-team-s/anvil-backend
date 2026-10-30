@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "demo": "node scripts/demo-rehearsal.js"
   },
   "engines": {
     "node": ">=20"

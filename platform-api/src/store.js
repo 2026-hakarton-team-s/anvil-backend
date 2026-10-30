@@ -4,7 +4,8 @@ import { config } from './config.js';
 import { TYPE_KEYS } from './utils/constants.js';
 
 const readJson = async (name) => JSON.parse(await fs.readFile(path.join(config.dataDir, name), 'utf8'));
-const stateFile = path.join(config.dataDir, 'state.json');
+// 테스트·리허설 스크립트는 ANVIL_STATE_FILE로 다른 파일을 써서 개발 중인 상태를 덮어쓰지 않는다
+const stateFile = process.env.ANVIL_STATE_FILE || path.join(config.dataDir, 'state.json');
 
 /** 공격 샘플, 정상 요청, 룰 후보 풀 (읽기 전용 시드 데이터) */
 export async function loadSeed() {
@@ -21,7 +22,10 @@ export function newState(rngSeed, seed) {
   return {
     gen: 0,
     ruleSeq: 0,
-    rngSeed,
+    seed: rngSeed,   // reset 때 고른 시드 (화면 표시·재현용)
+    rngSeed,         // 현재 난수 상태 (세대마다 바뀜)
+    run: null,       // 마지막 /api/run 진행 상황
+
     busy: false,
     activeStage: null,
     stages: ['', '', '', '', ''],
@@ -39,6 +43,8 @@ export async function loadState() {
     const s = JSON.parse(await fs.readFile(stateFile, 'utf8'));
     s.busy = false;
     s.activeStage = null;
+    s.run ??= null;
+    if (s.run && !s.run.finishedAt) s.run.finishedAt = Date.now(); // 실행 중에 서버가 꺼졌던 경우
     return s;
   } catch {
     return null;

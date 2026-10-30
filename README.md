@@ -33,7 +33,9 @@ cd platform-api
 npm install
 npm start          # http://localhost:8080
 npm test           # 단위 테스트
+npm run demo       # 서버 없이 시드 고정 데모(3세대) 결과 미리 보기
 ```
+발표 데모는 `POST /api/demo` 한 번이면 됩니다 (시드 고정 초기화 + 3세대 자동 실행, 진행은 SSE). 자세한 내용은 `docs/api.md`.
 이 상태에서도 `/api/run`으로 세대를 돌리고 로컬 룰 검사까지 동작합니다.
 
 ### 2) WAF + Demo Shop (Docker)
