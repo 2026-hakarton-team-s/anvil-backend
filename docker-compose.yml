@@ -1,0 +1,25 @@
+# WAF(Nginx + ModSecurity + CRS)와 보호 대상(demo-shop)을 띄운다.
+# platform-api는 compose에 넣지 않고 로컬에서 `npm start`로 실행한다 (docker compose exec로 WAF를 reload하기 위해).
+#
+# 주의: 아래 환경변수 이름과 마운트 경로는 owasp/modsecurity-crs 이미지 버전에 따라 다를 수 있다.
+# 처음 띄울 때 `docker compose logs waf`와 `curl -i localhost:8000/?q=<script>` 로 실제 동작을 확인할 것.
+services:
+  demo-shop:
+    build: ./demo-shop
+    expose:
+      - "3000"
+
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    depends_on:
+      - demo-shop
+    ports:
+      - "8000:8080"
+    environment:
+      PORT: "8080"
+      BACKEND: http://demo-shop:3000
+      MODSEC_RULE_ENGINE: "On"
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+    volumes:
+      # ANVIL이 쓰는 규칙 파일을 CRS의 "CRS 이전 규칙" 자리에 마운트
+      - ./waf/rules/anvil-rules.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf

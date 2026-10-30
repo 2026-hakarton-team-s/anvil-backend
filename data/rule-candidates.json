@@ -1,0 +1,37 @@
+{
+  "sqli": [
+    { "p": "1' OR 1=1--", "tier": "literal" },
+    { "p": "' UNION SELECT username", "tier": "literal" },
+    { "p": "; DROP TABLE users", "tier": "literal" },
+    { "p": "'\\s*(OR|AND)\\s+'?\\w+'?\\s*=\\s*'?\\w+|UNION\\s+(ALL\\s+)?SELECT|;\\s*DROP\\s+TABLE", "tier": "good" },
+    { "p": "'\\s*(OR|AND)\\s+'?\\w+'?\\s*=|UNION\\s+SELECT", "tier": "good" },
+    { "p": "select", "tier": "broad" },
+    { "p": "\\bor\\b", "tier": "broad" },
+    { "p": "=\\s*\\d", "tier": "broad" },
+    { "p": "'", "tier": "broad" }
+  ],
+  "xss": [
+    { "p": "<script>alert(1)</script>", "tier": "literal" },
+    { "p": "onerror=alert(1)", "tier": "literal" },
+    { "p": "<\\s*script|\\bon(error|load|click|mouseover|focus)\\s*=|javascript\\s*:", "tier": "good" },
+    { "p": "<\\s*script|\\bon(error|load)\\s*=", "tier": "good" },
+    { "p": "<\\w", "tier": "broad" },
+    { "p": "alert", "tier": "broad" },
+    { "p": "on\\w+", "tier": "broad" }
+  ],
+  "path": [
+    { "p": "../../etc/passwd", "tier": "literal" },
+    { "p": "(\\.\\.[\\/\\\\])+", "tier": "good" },
+    { "p": "\\.\\./", "tier": "good" },
+    { "p": "\\.\\.", "tier": "broad" },
+    { "p": "passwd", "tier": "broad" }
+  ],
+  "cmd": [
+    { "p": "; cat /etc/passwd", "tier": "literal" },
+    { "p": "(;|\\|\\|?|&&|`)\\s*(cat|ls|id|whoami|wget|curl|nc)\\b", "tier": "good" },
+    { "p": ";\\s*cat\\b", "tier": "good" },
+    { "p": ";", "tier": "broad" },
+    { "p": "\\bcat\\b", "tier": "broad" },
+    { "p": "\\|", "tier": "broad" }
+  ]
+}

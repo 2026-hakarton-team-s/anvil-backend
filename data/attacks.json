@@ -1,0 +1,25 @@
+{
+  "sqli": [
+    "/item?id=1' OR 1=1--",
+    "/search?q=' UNION SELECT username,password FROM users--",
+    "/item?id=1; DROP TABLE users",
+    "/login?user=admin' AND '1'='1"
+  ],
+  "xss": [
+    "/search?q=<script>alert(1)</script>",
+    "/profile?name=<img src=x onerror=alert(1)>",
+    "/go?url=javascript:alert(document.cookie)",
+    "/c?msg=<svg onload=alert(1)>"
+  ],
+  "path": [
+    "/download?file=../../etc/passwd",
+    "/view?page=../../../windows/win.ini",
+    "/img?src=..\\..\\boot.ini"
+  ],
+  "cmd": [
+    "/ping?host=127.0.0.1; cat /etc/passwd",
+    "/dns?ip=8.8.8.8 | ls -la",
+    "/run?cmd=`id`",
+    "/ping?host=1.1.1.1 && whoami"
+  ]
+}

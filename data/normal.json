@@ -1,0 +1,15 @@
+[
+  "/", "/home", "/login", "/products?sort=price&order=asc", "/news?id=1024", "/api/items?id=42&lang=ko",
+  "/search?q=select a plan", "/search?q=how to select columns in excel", "/blog?title=O'Reilly books",
+  "/api/users?name=Union Station", "/search?q=union jobs near me", "/search?q=script writing tips",
+  "/comment?text=I love it <3", "/comment?text=5 < 10 and 10 > 5", "/files?name=report..final.pdf",
+  "/search?q=cat food", "/search?q=ls lens review", "/q?tags=red;blue;green", "/search?q=drop shipping",
+  "/form?msg=1=1 is always true", "/search?q=or else", "/docs?path=guide/intro", "/search?q=java script tutorial",
+  "/search?q=onload event in react", "/math?expr=2*3/4", "/search?q=rock & roll", "/search?q=it's 5 o'clock",
+  "/user?bio=I'm a developer | designer", "/search?q=tom and jerry", "/search?q=password reset",
+  "/search?q=etc passwd meaning", "/search?q=%EA%B0%80%EB%B0%A9", "/cart?coupon=SAVE10", "/search?q=select%20all",
+  "/blog?q=Who's%20there%3F", "/search?q=the+who", "/c?msg=see you at 7;30", "/recipe?ingredient=onions&qty=2",
+  "/settings?notification=on&sound=off", "/search?q=weather alert seoul", "/api/session?token=abc123",
+  "/search?q=id card renewal", "/search?q=curl vs wget", "/blog?tag=c%2B%2B", "/search?q=50%25 off sale",
+  "/search?q=whoami meaning", "/download?file=manual.pdf", "/view?page=about"
+]
