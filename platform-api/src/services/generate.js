@@ -1,6 +1,7 @@
 import { config } from '../config.js';
-import { ALL_FLAGS, TYPE_KEYS } from '../utils/constants.js';
+import { ALL_FLAGS, FLAG_LABEL, TYPE_KEYS } from '../utils/constants.js';
 import { isSafePattern } from '../utils/matcher.js';
+import { askJson } from '../utils/llm.js';
 
 /** 지난 세대에 당한 우회 기법은 높은 확률로, 그 외는 가끔 탐색적으로 정규화 플래그에 추가 */
 function assignFlags(type, learned, rng) {
@@ -36,35 +37,40 @@ function pickFromPool(pool, gen, rng) {
 
 const SYSTEM_PROMPT = [
   'You write regular-expression signatures for a web application firewall.',
-  'Given attack request samples per type and benign request samples, return up to 4 signatures per type.',
-  'Rules: patterns must be JavaScript-compatible regex source strings without inline flags or delimiters;',
-  'case-insensitivity and decoding are handled separately; each pattern must be under 300 characters;',
-  'prefer patterns that generalize the attack structure but must NOT match the benign samples.',
+  'Given attack request samples per type, benign request samples, the attacker techniques that already bypassed earlier signatures,',
+  'and the signatures currently deployed, return up to 4 new signatures per type.',
+  'Rules: patterns must be JavaScript-compatible regex source strings without inline flags or delimiters; each pattern must be under 300 characters.',
+  'Before matching, the engine normalizes each request according to the rule flags:',
+  'url = percent-decode once, url2 = percent-decode twice, cmt = remove /* ... */ comments, ws = turn tabs, "+" and %09 into spaces and collapse runs of spaces.',
+  'Case-insensitive matching is applied when the rule has flag i. Write patterns against the normalized text.',
+  'Cover the techniques listed in "bypassedTechniques" and the requests listed in "bypassedExamples" by generalizing their structure.',
+  'Prefer patterns that generalize the attack structure, but must NOT match any benign sample. Do not repeat a deployed signature.',
   'Respond with JSON only: {"rules":[{"type":"sqli|xss|path|cmd","pattern":"..."}]}',
 ].join(' ');
 
-async function askOpenAI(corpus, normal) {
-  const attacks = Object.fromEntries(TYPE_KEYS.map((t) => [t, corpus[t].map((a) => a.text)]));
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.openaiKey}` },
-    body: JSON.stringify({
-      model: config.openaiModel,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: JSON.stringify({ attacks, benign: normal.slice(0, 25) }) },
-      ],
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!res.ok) throw new Error(`OpenAI 응답 오류 ${res.status}`);
-  const data = await res.json();
-  const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? '{}');
-  const picks = Object.fromEntries(TYPE_KEYS.map((t) => [t, []]));
-  for (const r of parsed.rules ?? []) {
-    // LLM이 준 패턴은 그대로 믿지 않고 길이·컴파일 가능 여부를 먼저 거른다
-    if (picks[r?.type] && picks[r.type].length < 4 && isSafePattern(r.pattern)) {
+const emptyPicks = () => Object.fromEntries(TYPE_KEYS.map((t) => [t, []]));
+
+/** 지난 세대 우회 정보: 뚫린 정규화 기법, 뚫린 공격 예시, 지금 배포된 룰 */
+function learnedContext(st) {
+  return {
+    bypassedTechniques: TYPE_KEYS.flatMap((t) => st.learned[t].map((f) => `${t}: ${FLAG_LABEL[f]}`)),
+    bypassedExamples: TYPE_KEYS.flatMap((t) =>
+      st.corpus[t].filter((a) => a.learned).slice(-4).map((a) => ({ type: t, text: a.text }))),
+    deployed: Object.values(st.deployed).map((r) => ({ type: r.type, pattern: r.pattern })),
+  };
+}
+
+async function askLLM(st, normal) {
+  const attacks = Object.fromEntries(TYPE_KEYS.map((t) => [t, st.corpus[t].map((a) => a.text)]));
+  const data = await askJson([
+    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user', content: JSON.stringify({ attacks, benign: normal.slice(0, 25), ...learnedContext(st) }) },
+  ]);
+  const picks = emptyPicks();
+  for (const r of Array.isArray(data.rules) ? data.rules : []) {
+    // LLM이 준 패턴은 그대로 믿지 않고 길이·컴파일 가능 여부를 먼저 거른다 (오탐 검증은 engine이 한다)
+    const dup = picks[r?.type]?.some((x) => x.p === r.pattern);
+    if (picks[r?.type] && picks[r.type].length < 4 && !dup && isSafePattern(r.pattern)) {
       picks[r.type].push({ p: r.pattern, tier: 'ai' });
     }
   }
@@ -78,7 +84,7 @@ export async function generateCandidates({ st, seed, rng }) {
   let note = null;
   if (config.openaiKey) {
     try {
-      picks = await askOpenAI(st.corpus, seed.normal);
+      picks = await askLLM(st, seed.normal);
       source = 'openai';
     } catch (err) {
       note = `OpenAI 호출 실패, 패턴 풀로 대체: ${err.message}`;
