@@ -9,6 +9,7 @@ import { generateAttacks } from './attacker.js';
 import { judgeDeployed } from './oracle.js';
 import { evalDetection, evalFalsePositive, evalBypass, judge } from './validate.js';
 import { applyRules } from './deploy.js';
+import { sendToWaf } from './waf.js';
 import { buildReport } from './report.js';
 
 export const DEMO_SEED = 20261031; // 발표 데모 기본 시드 (rng.js 기본값과 같음)
@@ -255,12 +256,10 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
       local: hit ? { blocked: true, ruleId: hit.id, type: hit.type, pattern: hit.pattern } : { blocked: false },
     };
     if (config.wafUrl) {
-      const url = new URL(request, config.wafUrl);
-      if (url.origin !== new URL(config.wafUrl).origin) throw httpError(400, '허용되지 않는 요청 주소입니다');
       try {
-        const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(5000) });
-        result.waf = { status: res.status, blocked: res.status === 403 };
+        result.waf = await sendToWaf(request);
       } catch (err) {
+        if (err.status) throw err;
         result.waf = { error: err.message };
       }
     }

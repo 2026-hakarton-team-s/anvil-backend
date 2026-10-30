@@ -1,18 +1,12 @@
-import { config } from '../config.js';
 import { TYPE_KEYS } from '../utils/constants.js';
 import { ruleMatches } from '../utils/matcher.js';
+import { sendToWaf } from './waf.js';
 
 const CONCURRENCY = 8;
-const TIMEOUT_MS = 5000;
 
-/** 요청 하나를 실제 WAF에 보내 403으로 막혔는지 본다. WAF 주소 밖으로는 보내지 않는다 */
+/** 요청 하나를 실제 WAF에 보내 403으로 막혔는지 본다 */
 async function probeWaf(request) {
-  const base = new URL(config.wafUrl);
-  const url = new URL(request, base);
-  if (url.origin !== base.origin) throw new Error('WAF 밖 주소로는 요청을 보내지 않습니다');
-  const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
-  await res.body?.cancel().catch(() => {});
-  return res.status === 403;
+  return (await sendToWaf(request)).blocked;
 }
 
 /** 요청 목록을 WAF에 보내 막힘 여부를 같은 순서의 배열로 돌려준다 */

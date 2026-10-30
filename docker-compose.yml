@@ -2,7 +2,7 @@
 # platform-api는 compose에 넣지 않고 로컬에서 `npm start`로 실행한다 (docker compose exec로 WAF를 reload하기 위해).
 #
 # 주의: 아래 환경변수 이름과 마운트 경로는 owasp/modsecurity-crs 이미지 버전에 따라 다를 수 있다.
-# 처음 띄울 때 `docker compose logs waf`와 `curl -i localhost:8000/?q=<script>` 로 실제 동작을 확인할 것.
+# 동작 확인은 `node scripts/waf-check.mjs`로 한다.
 services:
   demo-shop:
     build: ./demo-shop
@@ -24,9 +24,14 @@ services:
       MODSEC_AUDIT_LOG: /var/log/modsecurity/audit.log
       MODSEC_AUDIT_LOG_TYPE: Serial
       MODSEC_AUDIT_ENGINE: RelevantOnly
+      # CRS는 점수만 매기고 차단하지 않는다. CRS가 먼저 막으면 ANVIL 규칙의 효과를 볼 수 없다
+      ANOMALY_INBOUND: "10000"
+      ANOMALY_OUTBOUND: "10000"
     volumes:
       # WAF 감사 로그 → platform-api 기본 경로(data/waf-logs/audit.log)
       # 컨테이너가 쓸 수 있게 처음 한 번: mkdir -p data/waf-logs && chmod 777 data/waf-logs
       - ./data/waf-logs:/var/log/modsecurity
-      # ANVIL이 쓰는 규칙 파일을 CRS의 "CRS 이전 규칙" 자리에 마운트
-      - ./waf/rules/anvil-rules.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf
+      # ANVIL 규칙은 폴더로 마운트하고, 내용이 바뀌지 않는 Include 파일이 CRS보다 먼저 불러온다
+      # 규칙 파일을 직접 마운트하면 git pull이나 브랜치 전환으로 파일이 교체될 때 WAF가 옛 규칙에 묶인다
+      - ./waf/rules:/opt/modsecurity/rules/before-crs:ro
+      - ./waf/conf/anvil-include.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro
