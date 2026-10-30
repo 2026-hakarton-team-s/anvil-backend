@@ -14,6 +14,18 @@ import { buildReport } from './report.js';
 
 export const DEMO_SEED = 20261031; // 발표 데모 기본 시드 (rng.js 기본값과 같음)
 
+/**
+ * 초기화할 때 시드를 안 주면 이 중 하나를 무작위로 고른다 → 매번 다른 진행 과정을 보여준다.
+ * 1~135 중 "패턴 풀 + 로컬 판정, 오탐 0% · 우회 10% · 강도 2"에서 4세대 안에 100% 수렴한 시드만 골랐다.
+ * (무작위 시드 40개를 돌려 보면 3개는 12세대 안에 수렴하지 못해서 아무 시드나 쓰지 않는다)
+ * data/rule-candidates.json 이나 생성·변형 로직이 바뀌면 결과가 달라지므로 test/engine.test.js가 다시 확인한다.
+ */
+export const GOOD_SEEDS = [
+  1, 5, 7, 12, 15, 16, 17, 22, 24, 34, 40, 43, 44, 49, 55, 56, 62, 68, 69, 71,
+  74, 77, 78, 82, 84, 92, 96, 97, 98, 102, 103, 105, 107, 108, 109, 114, 117, 123, 125, 135,
+];
+const pickGoodSeed = () => GOOD_SEEDS[Math.floor(Math.random() * GOOD_SEEDS.length)];
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== '' && v !== null && v !== undefined ? Number(v) : d);
@@ -231,16 +243,21 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
     }
   }
 
-  /** 초기화. seed를 주면 그 시드로 고정 (같은 시드 + 같은 옵션 = 같은 데모 결과, 단 OpenAI를 쓰면 달라짐) */
+  /**
+   * 초기화.
+   *  - seed 없음 / "random" → GOOD_SEEDS 중 무작위 (화면의 "초기화" 버튼은 seed 없이 부르므로 매번 다른 진행)
+   *  - seed 숫자 → 그 시드로 고정 (같은 시드 + 같은 옵션 = 같은 결과, 단 OpenAI를 쓰면 달라짐)
+   */
   async function reset(opts = {}) {
     if (st.busy) throw httpError(409, '실행 중에는 초기화할 수 없습니다');
-    const s = opts.seed === undefined || opts.seed === null || opts.seed === '' ? DEMO_SEED : Number(opts.seed);
-    if (!Number.isInteger(s)) throw httpError(400, 'seed는 정수여야 합니다');
+    const random = opts.seed === undefined || opts.seed === null || opts.seed === '' || opts.seed === 'random';
+    const s = random ? pickGoodSeed() : Number(opts.seed);
+    if (!Number.isInteger(s)) throw httpError(400, 'seed는 정수 또는 "random"이어야 합니다');
     rng.setSeed(s);
     st = newState(rng.getSeed(), seed);
     st.seed = s;
     await applyRules([]).catch(() => {}); // WAF 규칙도 비움
-    log(`초기화 (시드 ${s}): 배포된 룰 없음, 공격 원본 샘플만 보유`);
+    log(`초기화 (${random ? '무작위 ' : ''}시드 ${s}): 배포된 룰 없음, 공격 원본 샘플만 보유`);
     await saveState(st).catch(() => {});
     changed();
     return buildReport(st, config);

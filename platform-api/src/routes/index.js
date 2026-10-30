@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { DEMO_SEED } from '../services/engine.js';
 
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 
@@ -21,7 +22,7 @@ export function createRouter(engine, addSseClient) {
     try { res.json(await engine.run(opts)); } catch (e) { next(e); }
   });
 
-  // 초기화. body: { seed } (선택, 기본 20261031)
+  // 초기화. body: { seed } (선택). 안 주면 수렴이 확인된 시드 중 무작위, 숫자를 주면 그 시드로 고정
   r.post('/reset', async (req, res, next) => {
     try { res.json(await engine.reset(req.body ?? {})); } catch (e) { next(e); }
   });
@@ -31,7 +32,8 @@ export function createRouter(engine, addSseClient) {
   r.post('/demo', async (req, res, next) => {
     try {
       const opts = req.body ?? {};
-      await engine.reset({ seed: opts.seed });
+      // 데모 버튼은 리허설한 결과를 그대로 보여주도록 시드를 안 주면 고정 시드(20261031)를 쓴다. 무작위는 { seed: "random" }
+      await engine.reset({ seed: opts.seed ?? DEMO_SEED });
       engine.run(opts).catch((e) => console.error('[demo]', e));
       res.status(202).json({ started: true, seed: engine.report().seed });
     } catch (e) { next(e); }
