@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { config } from '../config.js';
 import { TYPE_KEYS } from '../utils/constants.js';
+import { PROBE_HEADER } from './waf.js';
 
 const SIGNS = {
   sqli: /'\s*(or|and)\b|union\s+(all\s+)?select|;\s*drop\s+table/i,
@@ -27,8 +28,9 @@ async function readWafLog() {
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     try {
-      const uri = JSON.parse(line)?.transaction?.request?.uri;
-      if (typeof uri === 'string') uris.push(uri);
+      const request = JSON.parse(line)?.transaction?.request;
+      const fromPlatform = Object.keys(request?.headers ?? {}).some((h) => h.toLowerCase() === PROBE_HEADER);
+      if (typeof request?.uri === 'string' && !fromPlatform) uris.push(request.uri);
     } catch { /* JSON이 아닌 줄은 무시 */ }
   }
   return uris;

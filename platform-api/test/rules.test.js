@@ -6,6 +6,7 @@ import { generateVariants } from '../src/utils/mutate.js';
 import { createRng } from '../src/utils/rng.js';
 import { evalDetection, evalFalsePositive, evalBypass, judge } from '../src/services/validate.js';
 import { renderRule } from '../src/services/deploy.js';
+import { toWire } from '../src/services/waf.js';
 
 const read = async (name) => JSON.parse(await fs.readFile(new URL(`../../data/${name}`, import.meta.url), 'utf8'));
 const GOOD_SQLI = "'\\s*(OR|AND)\\s+'?\\w+'?\\s*=\\s*'?\\w+|UNION\\s+(ALL\\s+)?SELECT|;\\s*DROP\\s+TABLE";
@@ -59,11 +60,21 @@ test('같은 시드면 변형 공격이 같다 (데모 재현성)', async () => 
 
 test('renderRule은 정규화 플래그를 ModSecurity 변환 함수로 바꾼다', () => {
   const line = renderRule({ id: 'R012', type: 'sqli', pattern: 'a"b', flags: ['i', 'url2', 'cmt'] });
-  assert.match(line, /^SecRule REQUEST_URI\|ARGS\|REQUEST_BODY "@rx \(\?i\)a\\"b"/);
+  assert.match(line, /^SecRule REQUEST_URI_RAW\|ARGS_POST "@rx \(\?i\)a\\"b"/);
   assert.match(line, /id:1000012/);
   assert.equal((line.match(/t:urlDecodeUni/g) ?? []).length, 2);
   assert.match(line, /t:replaceComments/);
   assert.doesNotMatch(line, /t:removeComments/);
+});
+
+test('renderRule은 HTTP 디코딩을 기본 1회 적용한다', () => {
+  const line = renderRule({ id: 'R001', type: 'sqli', pattern: 'a', flags: [] });
+  assert.equal((line.match(/t:urlDecodeUni/g) ?? []).length, 1);
+});
+
+test('toWire는 HTTP에 못 싣는 문자만 인코딩하고 기존 %XX는 유지한다', () => {
+  assert.equal(toWire("/s?q=a'\tb#c<d"), "/s?q=a'%09b%23c%3Cd");
+  assert.equal(toWire('/s?q=%2527%20x'), '/s?q=%2527%20x');
 });
 
 test('ruleMatches는 정규화 후 요청에 패턴을 적용한다', () => {

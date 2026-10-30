@@ -9,19 +9,21 @@ const sh = promisify(exec);
 /**
  * 룰 하나를 ModSecurity SecRule 한 줄로 바꾼다.
  * 정규화 플래그는 ModSecurity 변환 함수(t:)로 대응시킨다.
- * 주의: 이 변환은 실제 WAF에서 돌려 보며 검증해야 한다 (JS 정규식과 PCRE의 차이가 있을 수 있음).
+ * URL 디코딩은 HTTP를 거친 요청이면 항상 필요해서 기본 1회이고, url2만 1회를 더한다.
+ * ARGS와 REQUEST_URI는 이미 디코딩된 값이라 원문인 REQUEST_URI_RAW로 검사해야 디코딩 횟수가 겹치지 않는다.
+ * 본문은 ARGS_POST로 검사한다 (JSON 본문은 REQUEST_BODY가 비어 있음).
  */
 export function renderRule(rule) {
   const id = 1000000 + Number(rule.id.replace(/\D/g, ''));
   const pattern = (rule.flags.includes('i') ? '(?i)' : '') + rule.pattern.replace(/"/g, '\\"');
   const transforms = ['t:none'];
-  const decodes = rule.flags.includes('url2') ? 2 : rule.flags.includes('url') ? 1 : 0;
+  const decodes = rule.flags.includes('url2') ? 2 : 1;
   for (let i = 0; i < decodes; i++) transforms.push('t:urlDecodeUni');
   // removeComments는 주석을 공백 없이 지워 UNION/**/SELECT → UNIONSELECT 가 되므로
   // matcher.js의 normalize(주석 → 공백)와 같은 결과를 내는 replaceComments를 쓴다
   if (rule.flags.includes('cmt')) transforms.push('t:replaceComments');
   if (rule.flags.includes('ws')) transforms.push('t:compressWhitespace');
-  return `SecRule REQUEST_URI|ARGS|REQUEST_BODY "@rx ${pattern}" "id:${id},phase:2,deny,status:403,log,msg:'ANVIL ${rule.id} ${rule.type}',${transforms.join(',')}"`;
+  return `SecRule REQUEST_URI_RAW|ARGS_POST "@rx ${pattern}" "id:${id},phase:2,deny,status:403,log,msg:'ANVIL ${rule.id} ${rule.type}',${transforms.join(',')}"`;
 }
 
 export function renderConf(rules) {
