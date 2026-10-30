@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { config } from '../config.js';
 import { TYPE_KEYS } from '../utils/constants.js';
-import { probedUris } from './oracle.js';
+import { PROBE_HEADER } from './waf.js';
 
 const SIGNS = {
   sqli: /'\s*(or|and)\b|union\s+(all\s+)?select|;\s*drop\s+table/i,
@@ -28,8 +28,9 @@ async function readWafLog() {
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     try {
-      const uri = JSON.parse(line)?.transaction?.request?.uri;
-      if (typeof uri === 'string') uris.push(uri);
+      const request = JSON.parse(line)?.transaction?.request;
+      const fromPlatform = Object.keys(request?.headers ?? {}).some((h) => h.toLowerCase() === PROBE_HEADER);
+      if (typeof request?.uri === 'string' && !fromPlatform) uris.push(request.uri);
     } catch { /* JSON이 아닌 줄은 무시 */ }
   }
   return uris;
@@ -42,8 +43,7 @@ export async function detect(st) {
   let observed = 0;
   for (const uri of await readWafLog()) {
     const type = classify(uri);
-    // 우리가 판정하려고 보낸 요청은 공격 관찰이 아니므로 학습 데이터에서 뺀다
-    if (!type || probedUris.has(uri) || st.corpus[type].some((a) => a.text === uri)) continue;
+    if (!type || st.corpus[type].some((a) => a.text === uri)) continue;
     if (observed >= MAX_OBSERVED) break;
     st.corpus[type].push({ text: uri, learned: true, techs: [], observed: true });
     observed++;

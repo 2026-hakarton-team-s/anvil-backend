@@ -9,7 +9,10 @@ import { generateAttacks } from './attacker.js';
 import { judgeDeployed } from './oracle.js';
 import { evalDetection, evalFalsePositive, evalBypass, judge } from './validate.js';
 import { applyRules } from './deploy.js';
+import { sendToWaf } from './waf.js';
 import { buildReport } from './report.js';
+
+export const DEMO_SEED = 20261031; // 발표 데모 기본 시드 (rng.js 기본값과 같음)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -43,6 +46,17 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
     TYPE_KEYS.flatMap((t) =>
       st.corpus[t].filter((a) => a.learned).map((a) => ({ type: t, text: a.text, techs: a.techs ?? [], base: a.text })));
 
+  /** 현재 세대가 수렴했는지 (모든 유형에 룰이 배포됐고 실전 우회 0) */
+  const isConverged = () => {
+    const last = st.history[st.history.length - 1];
+    return last.bypass === 0 && Object.keys(st.deployed).length === TYPE_KEYS.length;
+  };
+
+  /**
+   * POST /api/run: 세대를 generations번 연속 실행한다 (기본 3).
+   * 세대 사이에는 st.run으로 진행 상황을 report/SSE에 노출해 프론트가 "2/3세대"를 그릴 수 있게 한다.
+   * stopWhenConverged가 true(기본)면 수렴한 세대에서 남은 세대를 건너뛴다.
+   */
   async function run(opts = {}) {
     if (st.busy) throw httpError(409, '이미 실행 중입니다');
     const th = {
@@ -52,14 +66,50 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
     };
     const intensity = clamp(Math.round(num(opts.intensity, 2)), 1, 3);
     const delay = clamp(num(opts.stageDelayMs, 400), 0, 3000);
+    const total = clamp(Math.round(num(opts.generations, 3)), 1, 5);
+    const genDelay = clamp(num(opts.generationDelayMs, delay * 2), 0, 5000);
+    const stopWhenConverged = opts.stopWhenConverged !== false;
 
     st.busy = true;
+    const startGen = st.gen + 1;
+    st.run = { total, current: 0, startGen, endGen: startGen + total - 1, stoppedEarly: false, startedAt: Date.now(), finishedAt: null };
+    log(`자동 실행 시작: ${startGen}~${st.run.endGen}세대 (${total}세대, 공격 강도 ${intensity})`);
+    changed();
+
+    try {
+      for (let i = 1; i <= total; i++) {
+        st.run.current = i;
+        await runGeneration(th, intensity, delay);
+        if (i < total && stopWhenConverged && isConverged()) {
+          st.run.stoppedEarly = true;
+          log(`세대 ${st.gen}에서 수렴해 남은 ${total - i}세대를 건너뜁니다`, 'ok');
+          break;
+        }
+        if (i < total) {
+          st.activeStage = null;
+          changed();
+          await sleep(genDelay);
+        }
+      }
+    } finally {
+      st.busy = false;
+      st.activeStage = null;
+      st.run.finishedAt = Date.now();
+      st.rngSeed = rng.getSeed();
+      await saveState(st).catch(() => {});
+      changed();
+    }
+    return buildReport(st, config);
+  }
+
+  /** 1세대 = 5단계. busy/저장은 run()이 맡는다 */
+  async function runGeneration(th, intensity, delay) {
     st.gen += 1;
     st.stages = ['', '', '', '', ''];
     st.activeStage = null;
     changed();
 
-    try {
+    {
       // STEP 1: 학습 데이터 수집
       await stage(0, delay, async () => {
         const info = await detect(st);
@@ -178,22 +228,19 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
         }
         return `${changedCount}개 반영 · 실전 우회 ${m.escaped.length}건`;
       });
-    } finally {
-      st.busy = false;
-      st.activeStage = null;
-      st.rngSeed = rng.getSeed();
-      await saveState(st).catch(() => {});
-      changed();
     }
-    return buildReport(st, config);
   }
 
-  async function reset() {
+  /** 초기화. seed를 주면 그 시드로 고정 (같은 시드 + 같은 옵션 = 같은 데모 결과, 단 OpenAI를 쓰면 달라짐) */
+  async function reset(opts = {}) {
     if (st.busy) throw httpError(409, '실행 중에는 초기화할 수 없습니다');
-    rng.setSeed(20261031);
+    const s = opts.seed === undefined || opts.seed === null || opts.seed === '' ? DEMO_SEED : Number(opts.seed);
+    if (!Number.isInteger(s)) throw httpError(400, 'seed는 정수여야 합니다');
+    rng.setSeed(s);
     st = newState(rng.getSeed(), seed);
+    st.seed = s;
     await applyRules([]).catch(() => {}); // WAF 규칙도 비움
-    log('초기화: 배포된 룰 없음, 공격 원본 샘플만 보유');
+    log(`초기화 (시드 ${s}): 배포된 룰 없음, 공격 원본 샘플만 보유`);
     await saveState(st).catch(() => {});
     changed();
     return buildReport(st, config);
@@ -209,12 +256,10 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
       local: hit ? { blocked: true, ruleId: hit.id, type: hit.type, pattern: hit.pattern } : { blocked: false },
     };
     if (config.wafUrl) {
-      const url = new URL(request, config.wafUrl);
-      if (url.origin !== new URL(config.wafUrl).origin) throw httpError(400, '허용되지 않는 요청 주소입니다');
       try {
-        const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(5000) });
-        result.waf = { status: res.status, blocked: res.status === 403 };
+        result.waf = await sendToWaf(request);
       } catch (err) {
+        if (err.status) throw err;
         result.waf = { error: err.message };
       }
     }

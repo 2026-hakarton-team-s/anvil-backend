@@ -11,10 +11,11 @@ import { judgeDeployed } from '../src/services/oracle.js';
 import { detect } from '../src/services/detect.js';
 
 test('판정용으로 보낸 요청은 WAF 로그에 있어도 학습 데이터로 다시 들어가지 않는다', async () => {
-  // 가짜 WAF: 모든 요청을 허용하고, 요청 URI를 감사 로그 형식(JSON 한 줄)으로 기록한다
+
   const logFile = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'anvil-')), 'audit.log');
   const waf = http.createServer((req, res) => {
-    fsSync.appendFileSync(logFile,JSON.stringify({ transaction: { request: { uri: req.url } } }) + '\n');
+    // 감사 로그는 요청 헤더도 남기므로, 플랫폼이 붙인 표시(x-anvil-probe)가 그대로 들어간다
+    fsSync.appendFileSync(logFile, JSON.stringify({ transaction: { request: { uri: req.url, headers: req.headers } } }) + '\n');
     res.writeHead(200);
     res.end();
   });

@@ -26,6 +26,9 @@ export function buildReport(st, config) {
     busy: st.busy,
     activeStage: st.activeStage,
     stages: st.stages,
+    // 자동 반복 진행 상황: { total, current, startGen, endGen, stoppedEarly, startedAt, finishedAt } 또는 null
+    run: st.run ?? null,
+    seed: st.seed ?? null,
     converged: last.bypass === 0 && deployed.length === TYPE_KEYS.length && st.gen >= 3,
     kpis: {
       deployed: deployed.length,
