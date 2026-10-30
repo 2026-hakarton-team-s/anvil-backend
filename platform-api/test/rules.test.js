@@ -5,7 +5,7 @@ import { normalize, ruleMatches, isSafePattern } from '../src/utils/matcher.js';
 import { generateVariants } from '../src/utils/mutate.js';
 import { createRng } from '../src/utils/rng.js';
 import { evalDetection, evalFalsePositive, evalBypass, judge } from '../src/services/validate.js';
-import { renderRule } from '../src/services/deploy.js';
+import { renderConf, renderRule } from '../src/services/deploy.js';
 import { toWire } from '../src/services/waf.js';
 
 const read = async (name) => JSON.parse(await fs.readFile(new URL(`../../data/${name}`, import.meta.url), 'utf8'));
@@ -65,6 +65,10 @@ test('renderRule은 정규화 플래그를 ModSecurity 변환 함수로 바꾼�
   assert.equal((line.match(/t:urlDecodeUni/g) ?? []).length, 2);
   assert.match(line, /t:replaceComments/);
   assert.doesNotMatch(line, /t:removeComments/);
+});
+
+test('renderConf는 적용 여부를 확인하는 규칙을 항상 넣는다', () => {
+  assert.match(renderConf([], 'abc'), /x-anvil-reload "@streq abc".*status:418/);
 });
 
 test('renderRule은 HTTP 디코딩을 기본 1회 적용한다', () => {

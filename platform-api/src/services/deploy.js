@@ -3,6 +3,7 @@ import path from 'node:path';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { config, backendRoot } from '../config.js';
+import { RELOAD_HEADER, waitForReload } from './waf.js';
 
 const sh = promisify(exec);
 
@@ -26,10 +27,11 @@ export function renderRule(rule) {
   return `SecRule REQUEST_URI_RAW|ARGS_POST "@rx ${pattern}" "id:${id},phase:2,deny,status:403,log,msg:'ANVIL ${rule.id} ${rule.type}',${transforms.join(',')}"`;
 }
 
-export function renderConf(rules) {
+export function renderConf(rules, stamp) {
   const lines = [
     '# ANVIL이 자동으로 쓰는 파일입니다. 직접 수정하지 마세요.',
     `# 생성 시각: ${new Date().toISOString()} / 규칙 ${rules.length}개`,
+    `SecRule REQUEST_HEADERS:${RELOAD_HEADER} "@streq ${stamp}" "id:1999999,phase:1,deny,status:418,nolog"`,
   ];
   if (!rules.length) lines.push('# 아직 배포된 규칙이 없습니다.');
   for (const r of rules) lines.push(`# ${r.id} (${r.type}, ${r.gen}세대)`, renderRule(r));
@@ -50,12 +52,16 @@ export async function applyRules(rules) {
   let previous = null;
   try { previous = await fs.readFile(file, 'utf8'); } catch { /* 첫 배포 */ }
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, renderConf(rules));
+  const stamp = Date.now().toString(36);
+  await fs.writeFile(file, renderConf(rules, stamp));
 
   if (!config.wafTestCmd && !config.wafReloadCmd) return { reloaded: false };
   try {
     if (config.wafTestCmd) await run(config.wafTestCmd);
-    if (config.wafReloadCmd) await run(config.wafReloadCmd);
+    if (config.wafReloadCmd) {
+      await run(config.wafReloadCmd);
+      await waitForReload(stamp);
+    }
     return { reloaded: true };
   } catch (err) {
     if (previous !== null) {
