@@ -15,7 +15,7 @@ delete process.env.WAF_URL;
 
 const { loadSeed, newState } = await import('../src/store.js');
 const { createRng } = await import('../src/utils/rng.js');
-const { createEngine, DEMO_SEED } = await import('../src/services/engine.js');
+const { createEngine, DEMO_SEED, GOOD_SEEDS } = await import('../src/services/engine.js');
 
 async function makeEngine(onChange) {
   const seed = await loadSeed();
@@ -78,4 +78,29 @@ test('세대 진행이 onChange(SSE)로 단계마다 전달된다', async () => 
   }
   assert.equal(seen.at(-1).busy, false);
   assert.equal(seen.at(-1).current, 2);
+});
+
+test('시드 없이 초기화하면 수렴이 확인된 시드 중 하나를 무작위로 고른다', async () => {
+  const engine = await makeEngine();
+  const picked = new Set();
+  for (let i = 0; i < 30; i++) {
+    const r = await engine.reset(i % 2 ? {} : { seed: 'random' });
+    assert.ok(GOOD_SEEDS.includes(r.seed), `GOOD_SEEDS 밖의 시드: ${r.seed}`);
+    picked.add(r.seed);
+  }
+  assert.ok(picked.size > 1, '30번 초기화했는데 항상 같은 시드'); // 매번 다른 진행을 보여줘야 한다
+  assert.match(engine.report().logs[0].msg, /무작위 시드/);
+});
+
+test('GOOD_SEEDS는 모두 4세대 안에 오탐 0%로 수렴한다 (데이터·로직이 바뀌면 이 테스트가 깨진다)', async () => {
+  const slow = [];
+  for (const s of GOOD_SEEDS) {
+    const engine = await makeEngine();
+    await engine.reset({ seed: s });
+    let r;
+    // 프론트 "자동 진화"와 같은 방식: 1세대씩, 기본 슬라이더 값
+    do { r = await engine.run({ ...FAST, generations: 1, fpMax: 0, bypMax: 10, intensity: 2 }); } while (!r.converged && r.gen < 4);
+    if (!r.converged || r.kpis.fp !== 0) slow.push(`${s}(gen ${r.gen}, detect ${r.kpis.detect.toFixed(2)})`);
+  }
+  assert.deepEqual(slow, [], `4세대 안에 수렴하지 못한 시드: ${slow.join(', ')}`);
 });

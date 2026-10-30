@@ -8,7 +8,7 @@
 | GET | `/api/report` | 화면에 필요한 전체 상태 (아래 형식) |
 | GET | `/api/events` | SSE. 상태가 바뀔 때마다 `event: report`로 전체 report 전송 |
 | POST | `/api/run` | **여러 세대 자동 실행 (기본 3세대)**. 끝나면 report 반환. `wait:false`면 바로 202. 실행 중이면 409 |
-| POST | `/api/reset` | 초기화 (배포 룰도 비움). body `{ "seed": 20261031 }` 선택 |
+| POST | `/api/reset` | 초기화 (배포 룰도 비움). **시드를 안 주면 수렴이 확인된 시드 중 무작위** → 매번 다른 진행. 숫자 `{ "seed": 7 }`를 주면 고정 |
 | POST | `/api/demo` | **데모 버튼용**: 시드 고정 초기화 + 자동 실행을 한 번에. 바로 202, 진행은 SSE로 |
 | POST | `/api/test` | 요청 하나 검사. body `{ "request": "/search?q=..." }` |
 | GET | `/api/samples?kind=normal\|attack\|mutated` | 테스트용 샘플 요청 `{ request }` |
@@ -21,6 +21,11 @@
 - `POST /api/demo` 추가: 발표 때 이 버튼 하나만 누르면 됨
 - report에 `run`(자동 실행 진행 상황), `seed` 필드 추가
 - `POST /api/reset`이 `{ seed }`를 받음
+
+**2026-10-31 무작위 시드 초기화** — 프론트 수정 없음
+- 화면의 "초기화"(시드 없이 호출)가 이제 매번 다른 시드를 고름. 4세대 안에 100% 수렴이 확인된 40개(`GOOD_SEEDS`) 중에서만 고름 (WAF 없이 로컬 판정으로 확인한 결과. WAF 모드에서는 별도 확인 필요)
+- 어떤 시드였는지는 이벤트 로그 `초기화 (무작위 시드 44)`와 report의 `seed`에 남음. 같은 흐름을 다시 보려면 `{ "seed": 44 }`로 초기화
+- `/api/demo`는 그대로 20261031 고정 (무작위로 하려면 `{ "seed": "random" }`)
 
 ## POST /api/run body (모두 선택)
 ```json
@@ -40,7 +45,7 @@
 ```json
 { "seed": 20261031, "generations": 3, "stageDelayMs": 800 }
 ```
-`/api/reset {seed}` 후 `/api/run`을 `wait:false`로 부른 것과 같습니다. 응답 `202 { "started": true, "seed": 20261031 }`.
+`/api/reset {seed}` 후 `/api/run`을 `wait:false`로 부른 것과 같습니다. 시드를 안 주면 `/api/reset`과 달리 **20261031 고정**입니다 (리허설한 결과 그대로). 응답 `202 { "started": true, "seed": 20261031 }`.
 
 ## 프론트 연동 예시
 ```js
@@ -60,6 +65,8 @@ await fetch('/api/demo', { method: 'POST', headers: { 'Content-Type': 'applicati
 ```
 
 ## 시드 고정 데모 시나리오
+시드별 결과는 **패턴 풀 + 로컬 판정(WAF 없음)** 기준입니다. WAF를 켜면 5단계 평가가 실제 WAF 응답으로 바뀌어 숫자가 달라질 수 있습니다.
+
 같은 시드 + OpenAI 키 없음(패턴 풀) + 같은 옵션이면 결과가 항상 같습니다. `cd platform-api && npm run demo`로 서버 없이 미리 볼 수 있어요.
 기본 시드 `20261031`, 3세대, 강도 2 결과 (로컬 룰 검사 기준, 실제 WAF 결과 아님):
 
