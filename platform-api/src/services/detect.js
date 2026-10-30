@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { config } from '../config.js';
 import { TYPE_KEYS } from '../utils/constants.js';
+import { probedUris } from './oracle.js';
 
 const SIGNS = {
   sqli: /'\s*(or|and)\b|union\s+(all\s+)?select|;\s*drop\s+table/i,
@@ -41,7 +42,8 @@ export async function detect(st) {
   let observed = 0;
   for (const uri of await readWafLog()) {
     const type = classify(uri);
-    if (!type || st.corpus[type].some((a) => a.text === uri)) continue;
+    // 우리가 판정하려고 보낸 요청은 공격 관찰이 아니므로 학습 데이터에서 뺀다
+    if (!type || probedUris.has(uri) || st.corpus[type].some((a) => a.text === uri)) continue;
     if (observed >= MAX_OBSERVED) break;
     st.corpus[type].push({ text: uri, learned: true, techs: [], observed: true });
     observed++;

@@ -59,8 +59,9 @@ npm start
 | 이름 | 설명 |
 |---|---|
 | `PORT` | Platform API 포트 (기본 8080) |
-| `OPENAI_API_KEY` | 비우면 `data/rule-candidates.json` 패턴 풀로 규칙 후보 생성 |
-| `OPENAI_MODEL` | 사용할 모델 이름 |
+| `OPENAI_API_KEY` | 비우면 `data/rule-candidates.json` 패턴 풀로 규칙 후보 생성 (OpenAI 호환 키면 공급자 무관) |
+| `OPENAI_BASE_URL` | API 주소. 기본 `https://api.openai.com/v1`. Gemini 무료 키는 `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `OPENAI_MODEL` | 사용할 모델 이름 (기본 `gpt-4o-mini`, Gemini는 예: `gemini-2.5-flash-lite`) |
 | `WAF_URL` | 설정하면 요청 테스트가 실제 WAF로도 전송됨 |
 | `WAF_TEST_CMD` / `WAF_RELOAD_CMD` | 규칙 반영 전 문법 검사, 반영 명령. 실패하면 이전 규칙으로 롤백 |
 

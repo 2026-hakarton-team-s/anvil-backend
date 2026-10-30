@@ -20,7 +20,9 @@ export const config = {
   wafLogFile: process.env.WAF_LOG_FILE || path.join(backendRoot, 'data/waf-logs/audit.log'),
 
   // 비어 있으면 data/rule-candidates.json 패턴 풀로 대체
+  // OpenAI 호환 API라면 어떤 공급자든 쓸 수 있다 (예: Gemini는 OPENAI_BASE_URL을 아래처럼 설정)
   openaiKey: process.env.OPENAI_API_KEY || '',
+  openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
   openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
 
   minDetect: 0.75,

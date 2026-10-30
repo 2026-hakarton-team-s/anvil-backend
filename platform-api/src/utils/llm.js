@@ -6,7 +6,7 @@ import { config } from '../config.js';
  */
 export async function askJson(messages, { timeoutMs = 30000 } = {}) {
   if (!config.openaiKey) throw new Error('OPENAI_API_KEY가 없습니다');
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch(`${config.openaiBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.openaiKey}` },
     body: JSON.stringify({

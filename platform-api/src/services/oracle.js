@@ -5,11 +5,18 @@ import { ruleMatches } from '../utils/matcher.js';
 const CONCURRENCY = 8;
 const TIMEOUT_MS = 5000;
 
+/**
+ * 판정을 위해 WAF에 보낸 요청의 경로(URI). WAF 로그에는 이 요청도 남으므로,
+ * detect()가 이 목록에 있는 URI를 "관찰된 공격"으로 다시 가져가지 않게 한다.
+ */
+export const probedUris = new Set();
+
 /** 요청 하나를 실제 WAF에 보내 403으로 막혔는지 본다. WAF 주소 밖으로는 보내지 않는다 */
 async function probeWaf(request) {
   const base = new URL(config.wafUrl);
   const url = new URL(request, base);
   if (url.origin !== base.origin) throw new Error('WAF 밖 주소로는 요청을 보내지 않습니다');
+  probedUris.add(url.pathname + url.search);
   const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
   await res.body?.cancel().catch(() => {});
   return res.status === 403;
