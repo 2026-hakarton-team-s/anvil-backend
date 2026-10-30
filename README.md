@@ -38,8 +38,10 @@ npm test           # 단위 테스트
 
 ### 2) WAF + Demo Shop (Docker)
 ```bash
+mkdir -p data/waf-logs && chmod 777 data/waf-logs   # WAF 감사 로그 폴더 (처음 한 번)
 docker compose up -d --build     # WAF: http://localhost:8000
 ```
+WAF가 막은 요청은 `data/waf-logs/audit.log`에 쌓이고, 다음 세대 실행 때 `detect.js`가 읽어 학습 데이터에 넣습니다.
 Platform API가 규칙을 반영하고 WAF를 reload하도록 `.env`를 설정합니다.
 ```
 WAF_URL=http://localhost:8000

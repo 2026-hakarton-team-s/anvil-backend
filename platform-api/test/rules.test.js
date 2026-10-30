@@ -62,7 +62,8 @@ test('renderRule은 정규화 플래그를 ModSecurity 변환 함수로 바꾼�
   assert.match(line, /^SecRule REQUEST_URI\|ARGS\|REQUEST_BODY "@rx \(\?i\)a\\"b"/);
   assert.match(line, /id:1000012/);
   assert.equal((line.match(/t:urlDecodeUni/g) ?? []).length, 2);
-  assert.match(line, /t:removeComments/);
+  assert.match(line, /t:replaceComments/);
+  assert.doesNotMatch(line, /t:removeComments/);
 });
 
 test('ruleMatches는 정규화 후 요청에 패턴을 적용한다', () => {

@@ -20,6 +20,13 @@ services:
       BACKEND: http://demo-shop:3000
       MODSEC_RULE_ENGINE: "On"
       MODSEC_AUDIT_LOG_FORMAT: JSON
+      # 감사 로그를 파일로 남겨 platform-api(detect.js)가 읽게 한다 (기본값은 stdout이라 파일이 안 생김)
+      MODSEC_AUDIT_LOG: /var/log/modsecurity/audit.log
+      MODSEC_AUDIT_LOG_TYPE: Serial
+      MODSEC_AUDIT_ENGINE: RelevantOnly
     volumes:
+      # WAF 감사 로그 → platform-api 기본 경로(data/waf-logs/audit.log)
+      # 컨테이너가 쓸 수 있게 처음 한 번: mkdir -p data/waf-logs && chmod 777 data/waf-logs
+      - ./data/waf-logs:/var/log/modsecurity
       # ANVIL이 쓰는 규칙 파일을 CRS의 "CRS 이전 규칙" 자리에 마운트
       - ./waf/rules/anvil-rules.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf

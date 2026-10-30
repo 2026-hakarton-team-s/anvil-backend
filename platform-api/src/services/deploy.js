@@ -17,7 +17,9 @@ export function renderRule(rule) {
   const transforms = ['t:none'];
   const decodes = rule.flags.includes('url2') ? 2 : rule.flags.includes('url') ? 1 : 0;
   for (let i = 0; i < decodes; i++) transforms.push('t:urlDecodeUni');
-  if (rule.flags.includes('cmt')) transforms.push('t:removeComments');
+  // removeComments는 주석을 공백 없이 지워 UNION/**/SELECT → UNIONSELECT 가 되므로
+  // matcher.js의 normalize(주석 → 공백)와 같은 결과를 내는 replaceComments를 쓴다
+  if (rule.flags.includes('cmt')) transforms.push('t:replaceComments');
   if (rule.flags.includes('ws')) transforms.push('t:compressWhitespace');
   return `SecRule REQUEST_URI|ARGS|REQUEST_BODY "@rx ${pattern}" "id:${id},phase:2,deny,status:403,log,msg:'ANVIL ${rule.id} ${rule.type}',${transforms.join(',')}"`;
 }
