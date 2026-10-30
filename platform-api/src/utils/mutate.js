@@ -1,5 +1,5 @@
 // "AI 공격자" 역할: 공격 의도는 그대로 두고 겉모습만 바꾼 변형 공격을 만든다.
-// 현재는 규칙 기반 변형기이고, LLM 호출로 바꿀 때 generateVariants만 교체하면 된다.
+// 기본 공격자는 services/attacker.js(LLM)이고, 이 규칙 기반 변형기는 LLM을 못 쓸 때의 대체 수단이다.
 export const TECHNIQUES = {
   cmt: { label: '주석 삽입', flag: 'cmt', only: ['sqli'] },
   ws: { label: '공백 치환', flag: 'ws' },

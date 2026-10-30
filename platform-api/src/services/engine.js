@@ -5,7 +5,9 @@ import { ruleMatches } from '../utils/matcher.js';
 import { newState, saveState } from '../store.js';
 import { detect } from './detect.js';
 import { generateCandidates } from './generate.js';
-import { evalDetection, evalFalsePositive, evalBypass, judge, evaluateRuleset } from './validate.js';
+import { generateAttacks } from './attacker.js';
+import { judgeDeployed } from './oracle.js';
+import { evalDetection, evalFalsePositive, evalBypass, judge } from './validate.js';
 import { applyRules } from './deploy.js';
 import { buildReport } from './report.js';
 
@@ -96,7 +98,9 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
       let variants = [];
       await stage(3, delay, async () => {
         const replay = replayCases();
-        variants = TYPE_KEYS.flatMap((t) => generateVariants(t, seed.attacks[t], 6, intensity, rng)).concat(replay);
+        const attacks = await generateAttacks({ seed, st, intensity, perBase: 6, rng });
+        if (attacks.note) log(attacks.note, 'warn');
+        variants = attacks.variants.concat(replay);
         for (const r of st.candidates) {
           evalBypass(r, variants);
           if (r.status !== 'pending') continue;
@@ -105,7 +109,7 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
           r.status = judge(r, th);
         }
         const bypDrop = st.candidates.filter((r) => r.status === 'byp').length;
-        log(`AI 공격자가 변형 공격 ${variants.length - replay.length}건 생성 (강도 ${intensity}) + 과거 우회 사례 ${replay.length}건 재생 → 룰 ${bypDrop}개 우회당해 탈락`, bypDrop ? 'warn' : 'ok');
+        log(`AI 공격자(${attacks.source === 'llm' ? 'LLM' : '규칙 기반'})가 변형 공격 ${attacks.variants.length}건 생성 (강도 ${intensity}) + 과거 우회 사례 ${replay.length}건 재생 → 룰 ${bypDrop}개 우회당해 탈락`, bypDrop ? 'warn' : 'ok');
         return `변형 공격 ${variants.length}건 · ${bypDrop}개 뚫림`;
       });
 
@@ -141,8 +145,21 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
         }
 
         // 배포 후 실전 레드팀: 새 변형 공격으로 다시 공격 → 뚫린 공격은 다음 세대 학습 데이터로
-        const redTeam = TYPE_KEYS.flatMap((t) => generateVariants(t, seed.attacks[t], 8, intensity, rng));
-        const m = evaluateRuleset(Object.values(st.deployed), redTeam, seed.attacks, seed.normal);
+        const redTeam = await generateAttacks({ seed, st, intensity, perBase: 8, rng });
+        if (redTeam.note) log(redTeam.note, 'warn');
+        const judgeArgs = {
+          rules: Object.values(st.deployed),
+          variants: redTeam.variants,
+          seedAttacks: seed.attacks,
+          normal: seed.normal,
+        };
+        let m;
+        try {
+          m = await judgeDeployed({ ...judgeArgs, useWaf: !!config.wafUrl });
+        } catch (err) {
+          log(`WAF 판정 실패, 로컬 매칭으로 대체: ${err.message}`, 'warn');
+          m = await judgeDeployed({ ...judgeArgs, useWaf: false });
+        }
         let added = 0;
         const perType = {};
         for (const v of m.escaped) {
@@ -155,7 +172,7 @@ export function createEngine({ seed, state, rng, onChange = () => {} }) {
           }
         }
         st.history.push({ gen: st.gen, detect: m.detect, bypass: m.bypass, fp: m.fp });
-        log(`실전 레드팀 결과: 탐지 ${pct(m.detect)}, 우회 성공 ${m.escaped.length}건 → 학습 데이터 ${added}건 추가`, m.escaped.length ? 'bad' : 'ok');
+        log(`실전 레드팀(${m.mode === 'waf' ? '실제 WAF' : '로컬 매칭'}) 결과: 탐지 ${pct(m.detect)}, 우회 성공 ${m.escaped.length}건 → 학습 데이터 ${added}건 추가`, m.escaped.length ? 'bad' : 'ok');
         if (m.bypass === 0 && Object.keys(st.deployed).length === TYPE_KEYS.length) {
           log(`세대 ${st.gen}: 현재 강도의 AI 공격을 모두 차단 (오탐 ${pct(m.fp)}). 강도를 올려 다시 시험해보세요.`, 'ok');
         }
